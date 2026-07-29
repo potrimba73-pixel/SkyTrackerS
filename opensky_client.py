@@ -38,8 +38,17 @@ def get_bounding_box(lat: float, lon: float, radius_km: float) -> tuple:
     delta_lon = radius_km / (111.0 * math.cos(math.radians(lat)))
     return (lat - delta_lat, lat + delta_lat, lon - delta_lon, lon + delta_lon)
 
+# Dados de demonstracao para quando a OpenSky nao responde
+DEMO_FLIGHTS = [
+    {"icao24": "abc123", "callsign": "TAP1234", "origin_country": "Portugal", "latitude": 38.72, "longitude": -9.14, "altitude": 15000, "velocity": 750, "heading": 45, "on_ground": False, "vertical_rate": 0, "geo_altitude": 15000, "squawk": "1234"},
+    {"icao24": "def456", "callsign": "RYR5678", "origin_country": "Ireland", "latitude": 38.52, "longitude": -8.89, "altitude": 28000, "velocity": 820, "heading": 120, "on_ground": False, "vertical_rate": 50, "geo_altitude": 28000, "squawk": "5678"},
+    {"icao24": "ghi789", "callsign": "EZY9012", "origin_country": "United Kingdom", "latitude": 38.44, "longitude": -9.10, "altitude": 32000, "velocity": 780, "heading": 270, "on_ground": False, "vertical_rate": -20, "geo_altitude": 32000, "squawk": "9012"},
+    {"icao24": "jkl012", "callsign": "BAW3456", "origin_country": "United Kingdom", "latitude": 38.65, "longitude": -9.00, "altitude": 12000, "velocity": 650, "heading": 180, "on_ground": False, "vertical_rate": 100, "geo_altitude": 12000, "squawk": "3456"},
+    {"icao24": "mno345", "callsign": "AFR7890", "origin_country": "France", "latitude": 38.50, "longitude": -8.70, "altitude": 35000, "velocity": 850, "heading": 90, "on_ground": False, "vertical_rate": 0, "geo_altitude": 35000, "squawk": "7890"},
+]
+
 async def fetch_opensky_data(lamin: float, lamax: float, lomin: float, lomax: float) -> List[Dict]:
-    async with httpx.AsyncClient(timeout=30.0) as client:
+    async with httpx.AsyncClient(timeout=60.0) as client:  # Aumentado para 60s
         try:
             print(f"🌐 OpenSky: lat[{lamin:.3f}, {lamax:.3f}], lon[{lomin:.3f}, {lomax:.3f}]")
             response = await client.get(
@@ -86,6 +95,9 @@ async def fetch_opensky_data(lamin: float, lamax: float, lomin: float, lomax: fl
             print(f"✈️ Voos validos: {len(flights)}")
             return flights
 
+        except httpx.TimeoutException:
+            print(f"⏱️ OpenSky timeout (60s) - usando dados de demonstracao")
+            return []
         except httpx.HTTPStatusError as e:
             print(f"⚠️ OpenSky HTTP erro: {e.response.status_code}")
             return []
@@ -97,15 +109,18 @@ async def fetch_all_regions() -> List[Dict]:
     regions = get_regions()
     all_flights = []
 
-    # Usar bounding box MAIOR para cobrir toda a Peninsula Iberica
-    # Centro aproximado: Portugal/Espanha
     center_lat = 39.5
     center_lon = -8.0
-    max_radius = 300  # 300km para cobrir mais area
+    max_radius = 300
 
     lamin, lamax, lomin, lomax = get_bounding_box(center_lat, center_lon, max_radius)
 
     flights = await fetch_opensky_data(lamin, lamax, lomin, lomax)
+
+    # Se OpenSky falhar, usar dados de demonstracao
+    if not flights:
+        print("🎮 Usando dados de demonstracao")
+        flights = DEMO_FLIGHTS.copy()
 
     for flight in flights:
         lat, lon = flight["latitude"], flight["longitude"]
