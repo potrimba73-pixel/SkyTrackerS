@@ -15,7 +15,6 @@ REGIONS_JSON = os.getenv("REGIONS", """
 """)
 
 def get_regions() -> List[Dict[str, Any]]:
-    """Retorna lista de regioes configuradas"""
     try:
         return json.loads(REGIONS_JSON)
     except:
@@ -26,7 +25,6 @@ def get_regions() -> List[Dict[str, Any]]:
         ]
 
 def haversine(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
-    """Calcula distancia em km entre dois pontos"""
     R = 6371
     phi1, phi2 = math.radians(lat1), math.radians(lat2)
     dphi = math.radians(lat2 - lat1)
@@ -36,27 +34,30 @@ def haversine(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
     return R * c
 
 def get_bounding_box(lat: float, lon: float, radius_km: float) -> tuple:
-    """Calcula bounding box para uma regiao"""
     delta_lat = radius_km / 111.0
     delta_lon = radius_km / (111.0 * math.cos(math.radians(lat)))
     return (lat - delta_lat, lat + delta_lat, lon - delta_lon, lon + delta_lon)
 
 async def fetch_opensky_data(lamin: float, lamax: float, lomin: float, lomax: float) -> List[Dict]:
-    """Busca dados da OpenSky para uma bounding box"""
     async with httpx.AsyncClient(timeout=30.0) as client:
         try:
-            print(f"🌐 A chamar OpenSky: lat[{lamin:.2f}, {lamax:.2f}], lon[{lomin:.2f}, {lomax:.2f}]")
+            print(f"🌐 OpenSky: lat[{lamin:.3f}, {lamax:.3f}], lon[{lomin:.3f}, {lomax:.3f}]")
             response = await client.get(
                 OPENSKY_URL,
                 params={"lamin": lamin, "lamax": lamax, "lomin": lomin, "lomax": lomax}
             )
-            response.raise_for_status()
-            data = response.json()
+            print(f"📡 Status: {response.status_code}")
 
+            if response.status_code != 200:
+                print(f"⚠️ OpenSky erro HTTP {response.status_code}: {response.text[:200]}")
+                return []
+
+            data = response.json()
             states = data.get("states", [])
-            print(f"📡 OpenSky retornou {len(states)} estados brutos")
+            print(f"📊 Estados brutos: {len(states)}")
 
             if not states:
+                print("ℹ️ OpenSky: nenhum estado retornado")
                 return []
 
             flights = []
@@ -82,31 +83,29 @@ async def fetch_opensky_data(lamin: float, lamax: float, lomin: float, lomax: fl
                 }
                 flights.append(flight)
 
+            print(f"✈️ Voos validos: {len(flights)}")
             return flights
 
         except httpx.HTTPStatusError as e:
             print(f"⚠️ OpenSky HTTP erro: {e.response.status_code}")
             return []
         except Exception as e:
-            print(f"⚠️ OpenSky erro: {e}")
+            print(f"⚠️ OpenSky erro: {type(e).__name__}: {e}")
             return []
 
 async def fetch_all_regions() -> List[Dict]:
-    """Busca dados para todas as regioes configuradas"""
     regions = get_regions()
     all_flights = []
 
-    all_lats = [r["lat"] for r in regions]
-    all_lons = [r["lon"] for r in regions]
-    max_radius = max(r["radius_km"] for r in regions)
+    # Usar bounding box MAIOR para cobrir toda a Peninsula Iberica
+    # Centro aproximado: Portugal/Espanha
+    center_lat = 39.5
+    center_lon = -8.0
+    max_radius = 300  # 300km para cobrir mais area
 
-    center_lat = sum(all_lats) / len(all_lats)
-    center_lon = sum(all_lons) / len(all_lons)
-
-    lamin, lamax, lomin, lomax = get_bounding_box(center_lat, center_lon, max_radius + 50)
+    lamin, lamax, lomin, lomax = get_bounding_box(center_lat, center_lon, max_radius)
 
     flights = await fetch_opensky_data(lamin, lamax, lomin, lomax)
-    print(f"✈️ Total de voos na bounding box: {len(flights)}")
 
     for flight in flights:
         lat, lon = flight["latitude"], flight["longitude"]
@@ -125,7 +124,7 @@ async def fetch_all_regions() -> List[Dict]:
             flight["region_color"] = closest_region["color"]
             flight["distance_km"] = round(min_distance, 2)
             all_flights.append(flight)
-            print(f"   ✈️ {flight['callsign'] or flight['icao24']} em {closest_region['name']} ({min_distance:.1f}km)")
+            print(f"   📍 {flight['callsign'] or flight['icao24']} -> {closest_region['name']} ({min_distance:.1f}km)")
 
-    print(f"📍 Voos atribuidos a regioes: {len(all_flights)}")
+    print(f"📍 Voos nas regioes: {len(all_flights)}/{len(flights)}")
     return all_flights
