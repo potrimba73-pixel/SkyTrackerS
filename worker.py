@@ -1,5 +1,6 @@
 import asyncio
 import os
+import traceback
 from datetime import datetime, timedelta
 from opensky_client import fetch_all_regions, get_regions
 from database import (
@@ -24,14 +25,11 @@ class SkyTrackerWorker:
         }
 
     async def process_flights(self, flights: list):
-        """Processa voos: guarda, verifica alertas, envia emails"""
         alert_aircraft_upper = [a.upper() for a in ALERT_AIRCRAFT]
 
         for flight in flights:
-            # Guarda voo ativo
             await save_flight(flight)
 
-            # Guarda snapshot historico
             snapshot = {
                 "icao24": flight["icao24"],
                 "callsign": flight["callsign"],
@@ -47,12 +45,10 @@ class SkyTrackerWorker:
             }
             await save_snapshot(snapshot)
 
-            # Verifica alertas
             callsign = flight.get("callsign", "").strip().upper()
             icao24 = flight.get("icao24", "").strip().upper()
 
             if callsign and (callsign in alert_aircraft_upper or icao24 in alert_aircraft_upper):
-                # Evita spam: max 1 alerta por aviao a cada 30 min
                 if not await check_recent_alert(flight["icao24"], minutes=30):
                     alert_data = {
                         "icao24": flight["icao24"],
@@ -66,14 +62,10 @@ class SkyTrackerWorker:
                         "region": flight.get("region", "Desconhecido")
                     }
                     await save_alert(alert_data)
-
-                    # Envia email
                     await send_alert_email(flight, flight.get("region", "Sesimbra"))
-
                     print(f"🔔 ALERTA: {flight['callsign']} ({flight['icao24']}) detetado em {flight.get('region', 'N/A')}!")
 
     async def run_poll(self):
-        """Executa um ciclo de polling"""
         try:
             print(f"🔄 Polling OpenSky... {datetime.utcnow().strftime('%H:%M:%S')} UTC")
 
@@ -89,14 +81,11 @@ class SkyTrackerWorker:
             if flights:
                 await self.process_flights(flights)
 
-            # Limpa voos antigos (nao atualizados ha mais de 1h)
-            # O TTL do MongoDB faz isto automaticamente, mas podemos forcar
-
         except Exception as e:
             print(f"❌ Erro no polling: {e}")
+            traceback.print_exc()
 
     async def run_cleanup(self):
-        """Limpa dados antigos periodicamente"""
         try:
             result = await cleanup_old_data(days=CLEANUP_DAYS)
             print(f"🧹 Limpeza automatica: {result}")
@@ -104,7 +93,6 @@ class SkyTrackerWorker:
             print(f"❌ Erro na limpeza: {e}")
 
     async def start(self):
-        """Inicia o worker 24/7"""
         self.running = True
         print("🚀 SkyTracker Worker iniciado!")
         print(f"📍 Regioes: {[r['name'] for r in get_regions()]}")
@@ -114,7 +102,6 @@ class SkyTrackerWorker:
         while self.running:
             await self.run_poll()
 
-            # Limpa a cada 6 horas
             if datetime.utcnow() - self.last_cleanup > timedelta(hours=6):
                 await self.run_cleanup()
                 self.last_cleanup = datetime.utcnow()
@@ -122,13 +109,10 @@ class SkyTrackerWorker:
             await asyncio.sleep(POLL_INTERVAL)
 
     def stop(self):
-        """Para o worker"""
         self.running = False
         print("🛑 Worker parado")
 
-# Instancia global
 worker = SkyTrackerWorker()
 
 async def start_worker():
-    """Funcao para iniciar o worker (chamada pelo main.py)"""
     await worker.start()
