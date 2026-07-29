@@ -3,6 +3,7 @@ services:
     name: skytracker-sesimbra
     runtime: docker
     plan: free
+    dockerfilePath: ./Dockerfile
     envVars:
       - key: MONGODB_URI
         sync: false
