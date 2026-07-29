@@ -16,7 +16,6 @@ from database import (
 from opensky_client import fetch_all_regions, get_regions
 from worker import worker, start_worker
 
-# HTML do dashboard (inline para evitar problemas com pasta static/)
 DASHBOARD_HTML = """<!DOCTYPE html>
 <html lang="pt">
 <head>
@@ -893,7 +892,6 @@ DASHBOARD_HTML = """<!DOCTYPE html>
 </body>
 </html>"""
 
-# ============ LIFESPAN ============
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     await init_db()
@@ -916,7 +914,6 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# ============ WEBSOCKET ============
 class ConnectionManager:
     def __init__(self):
         self.active_connections: list[WebSocket] = []
@@ -942,24 +939,41 @@ class ConnectionManager:
 manager = ConnectionManager()
 
 async def broadcast_updates():
+    """Envia atualizacoes para todos os clientes WebSocket"""
     while True:
         try:
             if manager.active_connections:
                 flights = await get_active_flights()
                 regions = get_regions()
-                stats = await get_stats(hours=24)
-                pending_alerts = await get_pending_alerts()
+
+                # Stats com fallback para evitar erro
+                try:
+                    stats = await get_stats(hours=24)
+                except Exception as e:
+                    print(f"⚠️ Stats erro (usando fallback): {e}")
+                    stats = {
+                        "total_detections": 0, "unique_aircraft": 0,
+                        "unique_countries": 0, "max_altitude": 0,
+                        "avg_altitude": 0, "max_speed": 0
+                    }
+
+                try:
+                    pending_alerts = len(await get_pending_alerts())
+                except:
+                    pending_alerts = 0
+
                 await manager.broadcast({
                     "type": "update",
                     "flights": flights,
                     "regions": regions,
                     "stats": stats,
-                    "pending_alerts": len(pending_alerts),
+                    "pending_alerts": pending_alerts,
                     "timestamp": datetime.utcnow().isoformat()
                 })
             await asyncio.sleep(10)
         except Exception as e:
             print(f"WebSocket broadcast erro: {e}")
+            await asyncio.sleep(10)
 
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
@@ -967,7 +981,12 @@ async def websocket_endpoint(websocket: WebSocket):
     try:
         flights = await get_active_flights()
         regions = get_regions()
-        stats = await get_stats(hours=24)
+
+        try:
+            stats = await get_stats(hours=24)
+        except:
+            stats = {"total_detections": 0, "unique_aircraft": 0, "unique_countries": 0, "max_altitude": 0, "avg_altitude": 0, "max_speed": 0}
+
         await websocket.send_json({
             "type": "init",
             "flights": flights,
@@ -975,6 +994,7 @@ async def websocket_endpoint(websocket: WebSocket):
             "stats": stats,
             "timestamp": datetime.utcnow().isoformat()
         })
+
         while True:
             data = await websocket.receive_text()
             if data == "ping":
@@ -985,7 +1005,6 @@ async def websocket_endpoint(websocket: WebSocket):
         print(f"WebSocket erro: {e}")
         manager.disconnect(websocket)
 
-# ============ REST API ============
 @app.get("/api/health")
 async def health_check():
     return {
@@ -1018,13 +1037,19 @@ async def get_regions_api():
 
 @app.get("/api/stats")
 async def get_stats_api(hours: int = Query(24, ge=1, le=168)):
-    return {
-        "stats": await get_stats(hours=hours),
-        "hourly": await get_hourly_stats(hours=hours),
-        "countries": await get_country_stats(hours=hours),
-        "altitude": await get_altitude_distribution(hours=hours),
-        "hours": hours
-    }
+    try:
+        stats = await get_stats(hours=hours)
+        hourly = await get_hourly_stats(hours=hours)
+        countries = await get_country_stats(hours=hours)
+        altitude = await get_altitude_distribution(hours=hours)
+    except Exception as e:
+        print(f"Stats API erro: {e}")
+        stats = {"total_detections": 0, "unique_aircraft": 0, "unique_countries": 0, "max_altitude": 0, "avg_altitude": 0, "max_speed": 0}
+        hourly = []
+        countries = []
+        altitude = []
+
+    return {"stats": stats, "hourly": hourly, "countries": countries, "altitude": altitude, "hours": hours}
 
 @app.get("/api/alerts")
 async def get_alerts(pending_only: bool = Query(False)):
@@ -1053,7 +1078,6 @@ async def get_worker_stats():
         "alert_aircraft": [a.strip() for a in os.getenv("ALERT_AIRCRAFT", "").split(",") if a.strip()]
     }
 
-# ============ STATIC / PWA ============
 @app.get("/", response_class=HTMLResponse)
 async def get_dashboard():
     return HTMLResponse(content=DASHBOARD_HTML)
@@ -1087,13 +1111,6 @@ self.addEventListener('install', event => {
 });
 self.addEventListener('fetch', event => {
     event.respondWith(caches.match(event.request).then(response => response || fetch(event.request)));
-});
-self.addEventListener('push', event => {
-    const data = event.data.json();
-    event.waitUntil(self.registration.showNotification(data.title, {
-        body: data.body, icon: '/icon-192.png', badge: '/icon-72.png',
-        tag: data.tag || 'skytracker-alert', requireInteraction: true
-    }));
 });
 """
     return HTMLResponse(content=content, media_type="application/javascript")
