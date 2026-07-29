@@ -3,6 +3,7 @@ from datetime import datetime, timedelta
 from typing import Optional, List, Dict, Any
 from pymongo import AsyncMongoClient
 from pymongo.server_api import ServerApi
+from bson import ObjectId
 
 MONGODB_URI = os.getenv("MONGODB_URI", "mongodb://localhost:27017/skytracker")
 
@@ -16,6 +17,30 @@ flights_col = db.flights
 history_col = db.history
 alerts_col = db.alerts
 stats_col = db.stats
+
+def clean_doc(doc: dict) -> dict:
+    """Converte ObjectId para string e remove campos problematicos"""
+    if doc is None:
+        return {}
+    result = {}
+    for key, value in doc.items():
+        if key == '_id':
+            result[key] = str(value)
+        elif isinstance(value, ObjectId):
+            result[key] = str(value)
+        elif isinstance(value, datetime):
+            result[key] = value.isoformat()
+        elif isinstance(value, dict):
+            result[key] = clean_doc(value)
+        elif isinstance(value, list):
+            result[key] = [clean_doc(item) if isinstance(item, dict) else str(item) if isinstance(item, ObjectId) else item for item in value]
+        else:
+            result[key] = value
+    return result
+
+def clean_docs(docs: List[dict]) -> List[dict]:
+    """Limpa lista de documentos"""
+    return [clean_doc(doc) for doc in docs]
 
 async def init_db():
     await flights_col.create_index("icao24")
@@ -53,12 +78,14 @@ async def get_active_flights(region_filter: Optional[dict] = None) -> List[Dict]
     if region_filter:
         query["region"] = region_filter.get("name")
     cursor = flights_col.find(query).sort("updated_at", -1)
-    return await cursor.to_list(length=500)
+    docs = await cursor.to_list(length=500)
+    return clean_docs(docs)
 
 async def get_flight_history(icao24: str, hours: int = 24) -> List[Dict]:
     cutoff = datetime.utcnow() - timedelta(hours=hours)
     cursor = history_col.find({"icao24": icao24, "timestamp": {"$gte": cutoff}}).sort("timestamp", 1)
-    return await cursor.to_list(length=10000)
+    docs = await cursor.to_list(length=10000)
+    return clean_docs(docs)
 
 async def get_stats(hours: int = 24) -> Dict[str, Any]:
     cutoff = datetime.utcnow() - timedelta(hours=hours)
@@ -82,10 +109,9 @@ async def get_stats(hours: int = 24) -> Dict[str, Any]:
             "max_speed": {"$round": ["$max_speed", 0]}
         }}
     ]
-    # CORRECAO: await aggregate() primeiro, depois to_list()
     agg_cursor = await history_col.aggregate(pipeline)
     result = await agg_cursor.to_list(length=1)
-    return result[0] if result else {
+    return clean_doc(result[0]) if result else {
         "total_detections": 0, "unique_aircraft": 0, "unique_countries": 0,
         "max_altitude": 0, "avg_altitude": 0, "max_speed": 0
     }
@@ -98,7 +124,8 @@ async def get_hourly_stats(hours: int = 24) -> List[Dict]:
         {"$sort": {"_id": 1}}
     ]
     agg_cursor = await history_col.aggregate(pipeline)
-    return await agg_cursor.to_list(length=24)
+    docs = await agg_cursor.to_list(length=24)
+    return clean_docs(docs)
 
 async def get_country_stats(hours: int = 24) -> List[Dict]:
     cutoff = datetime.utcnow() - timedelta(hours=hours)
@@ -109,7 +136,8 @@ async def get_country_stats(hours: int = 24) -> List[Dict]:
         {"$limit": 10}
     ]
     agg_cursor = await history_col.aggregate(pipeline)
-    return await agg_cursor.to_list(length=10)
+    docs = await agg_cursor.to_list(length=10)
+    return clean_docs(docs)
 
 async def get_altitude_distribution(hours: int = 24) -> List[Dict]:
     cutoff = datetime.utcnow() - timedelta(hours=hours)
@@ -123,14 +151,15 @@ async def get_altitude_distribution(hours: int = 24) -> List[Dict]:
         }}
     ]
     agg_cursor = await history_col.aggregate(pipeline)
-    return await agg_cursor.to_list(length=10)
+    docs = await agg_cursor.to_list(length=10)
+    return clean_docs(docs)
 
 async def get_pending_alerts() -> List[Dict]:
     cursor = alerts_col.find({"notified": False}).sort("alert_time", -1)
-    return await cursor.to_list(length=100)
+    docs = await cursor.to_list(length=100)
+    return clean_docs(docs)
 
 async def mark_alert_notified(alert_id: str):
-    from bson import ObjectId
     await alerts_col.update_one(
         {"_id": ObjectId(alert_id)},
         {"$set": {"notified": True, "notified_at": datetime.utcnow()}}
@@ -138,7 +167,8 @@ async def mark_alert_notified(alert_id: str):
 
 async def get_all_alerts(limit: int = 50) -> List[Dict]:
     cursor = alerts_col.find().sort("alert_time", -1).limit(limit)
-    return await cursor.to_list(length=limit)
+    docs = await cursor.to_list(length=limit)
+    return clean_docs(docs)
 
 async def cleanup_old_data(days: int = 7):
     cutoff = datetime.utcnow() - timedelta(days=days)
