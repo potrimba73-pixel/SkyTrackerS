@@ -1,178 +1,172 @@
 import os
+import traceback
 from datetime import datetime, timedelta
-from typing import Optional, List, Dict, Any
-from pymongo import AsyncMongoClient
-from pymongo.server_api import ServerApi
 from bson import ObjectId
+from pymongo import AsyncMongoClient
 
-MONGODB_URI = os.getenv("MONGODB_URI", "mongodb://localhost:27017/skytracker")
+MONGODB_URI = os.getenv("MONGODB_URI", "")
 
-client = AsyncMongoClient(MONGODB_URI, server_api=ServerApi('1'))
-from urllib.parse import urlparse
-parsed = urlparse(MONGODB_URI)
-db_name = parsed.path.lstrip('/').split('?')[0] or 'skytracker'
-db = client[db_name]
+_db_client = None
+_db = None
 
-flights_col = db.flights
-history_col = db.history
-alerts_col = db.alerts
-stats_col = db.stats
+async def get_db_client():
+    global _db_client
+    if _db_client is None:
+        _db_client = AsyncMongoClient(MONGODB_URI)
+    return _db_client
 
-def clean_doc(doc: dict) -> dict:
-    """Converte ObjectId para string e remove campos problematicos"""
+async def get_db():
+    global _db
+    if _db is None:
+        client = await get_db_client()
+        _db = client.get_database("skytracker")
+    return _db
+
+async def init_db():
+    db = await get_db()
+    flights_col = db["flights"]
+    history_col = db["history"]
+    alerts_col = db["alerts"]
+    await flights_col.create_index("icao24")
+    await flights_col.create_index("last_seen")
+    await history_col.create_index("timestamp")
+    await history_col.create_index("icao24")
+    await alerts_col.create_index("timestamp")
+    print("✅ Base de dados inicializada")
+
+def clean_doc(doc):
     if doc is None:
-        return {}
-    result = {}
-    for key, value in doc.items():
-        if key == '_id':
-            result[key] = str(value)
-        elif isinstance(value, ObjectId):
+        return None
+    result = dict(doc)
+    if "_id" in result:
+        result["_id"] = str(result["_id"])
+    for key, value in result.items():
+        if isinstance(value, ObjectId):
             result[key] = str(value)
         elif isinstance(value, datetime):
             result[key] = value.isoformat()
-        elif isinstance(value, dict):
-            result[key] = clean_doc(value)
         elif isinstance(value, list):
-            result[key] = [clean_doc(item) if isinstance(item, dict) else str(item) if isinstance(item, ObjectId) else item for item in value]
-        else:
-            result[key] = value
+            result[key] = [str(v) if isinstance(v, ObjectId) else v for v in value]
     return result
 
-def clean_docs(docs: List[dict]) -> List[dict]:
-    """Limpa lista de documentos"""
-    return [clean_doc(doc) for doc in docs]
+async def save_flight(flight_data):
+    try:
+        db = await get_db()
+        flights_col = db["flights"]
+        history_col = db["history"]
 
-async def init_db():
-    await flights_col.create_index("icao24")
-    await flights_col.create_index("last_contact", expireAfterSeconds=3600)
-    await history_col.create_index("icao24")
-    await history_col.create_index("timestamp")
-    await alerts_col.create_index([("icao24", 1), ("alert_time", 1)])
-    await stats_col.create_index("date")
-    await stats_col.create_index("hour")
-    print("✅ Base de dados inicializada")
+        await flights_col.update_one(
+            {"icao24": flight_data["icao24"]},
+            {"$set": flight_data, "$setOnInsert": {"first_seen": datetime.utcnow()}},
+            upsert=True
+        )
 
-async def save_flight(flight_data: dict):
-    flight_data["updated_at"] = datetime.utcnow()
-    await flights_col.update_one(
-        {"icao24": flight_data["icao24"]},
-        {"$set": flight_data, "$setOnInsert": {"first_seen": datetime.utcnow()}},
-        upsert=True
-    )
+        await history_col.insert_one({
+            **flight_data,
+            "timestamp": datetime.utcnow()
+        })
+        return True
+    except Exception as e:
+        print(f"Erro ao guardar voo: {e}")
+        traceback.print_exc()
+        return False
 
-async def save_snapshot(snapshot: dict):
-    await history_col.insert_one(snapshot)
+async def get_active_flights():
+    try:
+        db = await get_db()
+        flights_col = db["flights"]
+        cursor = flights_col.find({"last_seen": {"$gte": datetime.utcnow() - timedelta(minutes=5)}})
+        flights = []
+        async for doc in cursor:
+            flights.append(clean_doc(doc))
+        return flights
+    except Exception as e:
+        print(f"Erro ao obter voos ativos: {e}")
+        traceback.print_exc()
+        return []
 
-async def save_alert(alert: dict):
-    alert["alert_time"] = datetime.utcnow()
-    alert["notified"] = False
-    await alerts_col.insert_one(alert)
+async def get_stats(hours=24):
+    try:
+        db = await get_db()
+        history_col = db["history"]
+        flights_col = db["flights"]
 
-async def check_recent_alert(icao24: str, minutes: int = 30) -> bool:
-    cutoff = datetime.utcnow() - timedelta(minutes=minutes)
-    count = await alerts_col.count_documents({"icao24": icao24, "alert_time": {"$gte": cutoff}})
-    return count > 0
+        since = datetime.utcnow() - timedelta(hours=hours)
 
-async def get_active_flights(region_filter: Optional[dict] = None) -> List[Dict]:
-    query = {}
-    if region_filter:
-        query["region"] = region_filter.get("name")
-    cursor = flights_col.find(query).sort("updated_at", -1)
-    docs = await cursor.to_list(length=500)
-    return clean_docs(docs)
+        # Total flights
+        total = await history_col.count_documents({"timestamp": {"$gte": since}})
 
-async def get_flight_history(icao24: str, hours: int = 24) -> List[Dict]:
-    cutoff = datetime.utcnow() - timedelta(hours=hours)
-    cursor = history_col.find({"icao24": icao24, "timestamp": {"$gte": cutoff}}).sort("timestamp", 1)
-    docs = await cursor.to_list(length=10000)
-    return clean_docs(docs)
+        # Active flights
+        active = await flights_col.count_documents({"last_seen": {"$gte": datetime.utcnow() - timedelta(minutes=5)}})
 
-async def get_stats(hours: int = 24) -> Dict[str, Any]:
-    cutoff = datetime.utcnow() - timedelta(hours=hours)
-    pipeline = [
-        {"$match": {"timestamp": {"$gte": cutoff}}},
-        {"$group": {
-            "_id": None,
-            "total_detections": {"$sum": 1},
-            "unique_aircraft": {"$addToSet": "$icao24"},
-            "unique_countries": {"$addToSet": "$origin_country"},
-            "max_altitude": {"$max": "$altitude"},
-            "avg_altitude": {"$avg": "$altitude"},
-            "max_speed": {"$max": "$velocity"}
-        }},
-        {"$project": {
-            "total_detections": 1,
-            "unique_aircraft": {"$size": "$unique_aircraft"},
-            "unique_countries": {"$size": "$unique_countries"},
-            "max_altitude": {"$round": ["$max_altitude", 0]},
-            "avg_altitude": {"$round": ["$avg_altitude", 0]},
-            "max_speed": {"$round": ["$max_speed", 0]}
-        }}
-    ]
-    agg_cursor = await history_col.aggregate(pipeline)
-    result = await agg_cursor.to_list(length=1)
-    return clean_doc(result[0]) if result else {
-        "total_detections": 0, "unique_aircraft": 0, "unique_countries": 0,
-        "max_altitude": 0, "avg_altitude": 0, "max_speed": 0
-    }
+        # Unique countries
+        pipeline = [
+            {"$match": {"timestamp": {"$gte": since}}},
+            {"$group": {"_id": "$origin_country", "count": {"$sum": 1}}},
+            {"$sort": {"count": -1}},
+            {"$limit": 10}
+        ]
+        agg_cursor = await history_col.aggregate(pipeline)
+        countries = await agg_cursor.to_list(length=10)
+        countries = [clean_doc(c) for c in countries]
 
-async def get_hourly_stats(hours: int = 24) -> List[Dict]:
-    cutoff = datetime.utcnow() - timedelta(hours=hours)
-    pipeline = [
-        {"$match": {"timestamp": {"$gte": cutoff}}},
-        {"$group": {"_id": {"$hour": "$timestamp"}, "count": {"$sum": 1}}},
-        {"$sort": {"_id": 1}}
-    ]
-    agg_cursor = await history_col.aggregate(pipeline)
-    docs = await agg_cursor.to_list(length=24)
-    return clean_docs(docs)
+        # Max altitude
+        pipeline_max = [
+            {"$match": {"timestamp": {"$gte": since}, "altitude": {"$exists": True}}},
+            {"$group": {"_id": None, "max_alt": {"$max": "$altitude"}}}
+        ]
+        agg_cursor_max = await history_col.aggregate(pipeline_max)
+        max_alt_result = await agg_cursor_max.to_list(length=1)
+        max_altitude = max_alt_result[0]["max_alt"] if max_alt_result else 0
 
-async def get_country_stats(hours: int = 24) -> List[Dict]:
-    cutoff = datetime.utcnow() - timedelta(hours=hours)
-    pipeline = [
-        {"$match": {"timestamp": {"$gte": cutoff}, "origin_country": {"$ne": None}}},
-        {"$group": {"_id": "$origin_country", "count": {"$sum": 1}}},
-        {"$sort": {"count": -1}},
-        {"$limit": 10}
-    ]
-    agg_cursor = await history_col.aggregate(pipeline)
-    docs = await agg_cursor.to_list(length=10)
-    return clean_docs(docs)
+        # Hourly distribution
+        pipeline_hourly = [
+            {"$match": {"timestamp": {"$gte": since}}},
+            {"$group": {"_id": {"$hour": "$timestamp"}, "count": {"$sum": 1}}},
+            {"$sort": {"_id": 1}}
+        ]
+        agg_cursor_hourly = await history_col.aggregate(pipeline_hourly)
+        hourly_raw = await agg_cursor_hourly.to_list(length=24)
+        hourly = [{"hour": str(h["_id"]).zfill(2), "count": h["count"]} for h in hourly_raw]
 
-async def get_altitude_distribution(hours: int = 24) -> List[Dict]:
-    cutoff = datetime.utcnow() - timedelta(hours=hours)
-    pipeline = [
-        {"$match": {"timestamp": {"$gte": cutoff}, "altitude": {"$gt": 0}}},
-        {"$bucket": {
-            "groupBy": "$altitude",
-            "boundaries": [0, 1000, 5000, 10000, 20000, 30000, 40000, 50000],
-            "default": "40k+",
-            "output": {"count": {"$sum": 1}}
-        }}
-    ]
-    agg_cursor = await history_col.aggregate(pipeline)
-    docs = await agg_cursor.to_list(length=10)
-    return clean_docs(docs)
+        # Altitude distribution
+        alt_ranges = [
+            {"range": "0-1k", "min": 0, "max": 1000},
+            {"range": "1k-5k", "min": 1000, "max": 5000},
+            {"range": "5k-10k", "min": 5000, "max": 10000},
+            {"range": "10k-20k", "min": 10000, "max": 20000},
+            {"range": "20k-30k", "min": 20000, "max": 30000},
+            {"range": "30k-40k", "min": 30000, "max": 40000},
+            {"range": "40k+", "min": 40000, "max": 999999},
+        ]
+        alt_distribution = []
+        for r in alt_ranges:
+            count = await history_col.count_documents({
+                "timestamp": {"$gte": since},
+                "altitude": {"$gte": r["min"], "$lt": r["max"]}
+            })
+            alt_distribution.append({"range": r["range"], "count": count})
 
-async def get_pending_alerts() -> List[Dict]:
-    cursor = alerts_col.find({"notified": False}).sort("alert_time", -1)
-    docs = await cursor.to_list(length=100)
-    return clean_docs(docs)
+        return {
+            "total_flights": total,
+            "active_flights": active,
+            "unique_countries": len(countries),
+            "max_altitude": max_altitude,
+            "countries": countries,
+            "hourly": hourly,
+            "altitude_distribution": alt_distribution
+        }
+    except Exception as e:
+        print(f"Erro stats: {e}")
+        traceback.print_exc()
+        return {}
 
-async def mark_alert_notified(alert_id: str):
-    await alerts_col.update_one(
-        {"_id": ObjectId(alert_id)},
-        {"$set": {"notified": True, "notified_at": datetime.utcnow()}}
-    )
-
-async def get_all_alerts(limit: int = 50) -> List[Dict]:
-    cursor = alerts_col.find().sort("alert_time", -1).limit(limit)
-    docs = await cursor.to_list(length=limit)
-    return clean_docs(docs)
-
-async def cleanup_old_data(days: int = 7):
-    cutoff = datetime.utcnow() - timedelta(days=days)
-    result_history = await history_col.delete_many({"timestamp": {"$lt": cutoff}})
-    result_alerts = await alerts_col.delete_many({"alert_time": {"$lt": cutoff}})
-    print(f"🧹 Limpeza: {result_history.deleted_count} snapshots, {result_alerts.deleted_count} alertas antigos removidos")
-    return {"history_deleted": result_history.deleted_count, "alerts_deleted": result_alerts.deleted_count}
+async def cleanup_old(days=7):
+    try:
+        db = await get_db()
+        history_col = db["history"]
+        cutoff = datetime.utcnow() - timedelta(days=days)
+        result = await history_col.delete_many({"timestamp": {"$lt": cutoff}})
+        print(f"🧹 Limpos {result.deleted_count} registos antigos")
+    except Exception as e:
+        print(f"Erro cleanup: {e}")
