@@ -1,0 +1,32 @@
+services:
+  - type: web
+    name: skytracker-sesimbra
+    runtime: python
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn main:app --host 0.0.0.0 --port $PORT
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.0
+      - key: MONGODB_URI
+        sync: false
+      - key: REGIONS
+        value: '[{"name":"Sesimbra","lat":38.4435,"lon":-9.1015,"radius_km":80,"color":"#ef4444"},{"name":"Setubal","lat":38.5244,"lon":-8.8882,"radius_km":60,"color":"#3b82f6"},{"name":"Lisboa","lat":38.7223,"lon":-9.1393,"radius_km":70,"color":"#22c55e"}]'
+      - key: ALERT_AIRCRAFT
+        value: ''
+      - key: POLL_INTERVAL
+        value: '30'
+      - key: CLEANUP_DAYS
+        value: '7'
+      - key: SMTP_HOST
+        value: ''
+      - key: SMTP_PORT
+        value: '587'
+      - key: SMTP_USER
+        value: ''
+      - key: SMTP_PASS
+        value: ''
+      - key: SMTP_FROM
+        value: 'SkyTracker <noreply@skytracker.pt>'
+      - key: ALERT_EMAIL
+        value: ''
