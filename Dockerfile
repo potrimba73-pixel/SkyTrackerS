@@ -7,9 +7,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends gcc && rm -rf /
 COPY requirements.txt .
 RUN pip install --no-cache-dir --upgrade pip && pip install --no-cache-dir -r requirements.txt
 
-COPY . /app/
-
-RUN ls -la /app/static/ || echo "AVISO: pasta static/ nao encontrada"
+COPY *.py /app/
 
 EXPOSE 8000
 
