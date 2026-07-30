@@ -12,7 +12,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from database import init_db, get_db, get_active_flights, get_stats
 from worker import start_worker, stop_worker
 
-# HTML Dashboard inline - nao depende de ficheiros externos
+# HTML Dashboard inline
 DASHBOARD_HTML = r"""<!DOCTYPE html>
 <html lang="pt">
 <head>
@@ -118,11 +118,11 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:#0f172a;color:#e2e8f
 <div class="stat-card"><div class="value" id="stat-total">0</div><div class="label">Voos 24h</div></div>
 <div class="stat-card"><div class="value" id="stat-active">0</div><div class="label">Ativos</div></div>
 <div class="stat-card"><div class="value" id="stat-countries">0</div><div class="label">Países</div></div>
-<div class="stat-card"><div class="value" id="stat-max-alt">0</div><div class="Alt. Máx (ft)"></div></div>
+<div class="stat-card"><div class="value" id="stat-max-alt">0</div><div class="label">Alt. Max (ft)</div></div>
 </div>
-<div class="chart-container"><h3>📈 Detecções por Hora</h3><canvas id="hourlyChart"></canvas></div>
-<div class="chart-container"><h3>🌍 Top Países</h3><canvas id="countriesChart"></canvas></div>
-<div class="chart-container"><h3>📏 Distribuição de Altitude</h3><canvas id="altitudeChart"></canvas></div>
+<div class="chart-container"><h3>📈 Detecoes por Hora</h3><canvas id="hourlyChart"></canvas></div>
+<div class="chart-container"><h3>🌍 Top Paises</h3><canvas id="countriesChart"></canvas></div>
+<div class="chart-container"><h3>📏 Distribuicao de Altitude</h3><canvas id="altitudeChart"></canvas></div>
 </div>
 <div class="tab-content" id="tab-alerts">
 <div id="alerts-list"><p style="color:#94a3b8;text-align:center;padding:20px">Nenhum alerta configurado</p></div>
@@ -140,12 +140,12 @@ function createAircraftIcon(heading,color,callsign){const airline=getAirlineInfo
 let flights=[],markers={},regions=[],ws=null,charts={};
 async function loadRegions(){try{const res=await fetch('/api/regions');regions=await res.json();regions.forEach(r=>{L.circle([r.lat,r.lon],{radius:r.radius_km*1000,color:r.color,fillColor:r.color,fillOpacity:.08,weight:2}).addTo(map).bindPopup('<b>'+r.name+'</b><br>Raio: '+r.radius_km+'km');L.marker([r.lat,r.lon],{icon:L.divIcon({html:'<div style="background:'+r.color+';color:white;padding:3px 8px;border-radius:4px;font-size:11px;font-weight:600;">'+r.name+'</div>',className:'region-label'})}).addTo(map)})}catch(e){console.error('Erro regioes:',e)}}
 async function loadFlights(){try{const res=await fetch('/api/flights');const data=await res.json();updateFlights(data.flights||[])}catch(e){console.error('Erro voos:',e)}}
-function updateFlights(newFlights){flights=newFlights;document.getElementById('flight-count').textContent=flights.length+' voos';document.getElementById('flights-loading').style.display='none';const currentIds=new Set(flights.map(f=>f.icao24));Object.keys(markers).forEach(id=>{if(!currentIds.has(id)){map.removeLayer(markers[id]);delete markers[id]}});flights.forEach(f=>{const airline=getAirlineInfo(f.callsign);const region=regions.find(r=>r.name===f.region)||{color:'#38bdf8'};if(markers[f.icao24]){markers[f.icao24].setLatLng([f.latitude,f.longitude]);markers[f.icao24].setIcon(createAircraftIcon(f.heading,region.color,f.callsign))}else{const marker=L.marker([f.latitude,f.longitude],{icon:createAircraftIcon(f.heading,region.color,f.callsign)}).addTo(map);const flightTime=f.last_contact?Math.round((Date.now()/1000-f.last_contact)/60):'?';const popupContent='<div class="popup-content"><div class="popup-header"><span class="popup-flag">'+airline.flag+'</span><div><div class="popup-callsign">'+(f.callsign||'N/A')+'</div><div class="popup-airline">'+airline.name+'</div></div></div><div class="popup-details"><div class="popup-detail"><i class="fas fa-arrows-alt-v"></i> '+Math.round(f.altitude||0).toLocaleString()+' ft</div><div class="popup-detail"><i class="fas fa-tachometer-alt"></i> '+Math.round((f.velocity||0)*3.6)+' km/h</div><div class="popup-detail"><i class="fas fa-compass"></i> '+Math.round(f.heading||0)+'°</div><div class="popup-detail"><i class="fas fa-clock"></i> '+flightTime+' min</div><div class="popup-detail"><i class="fas fa-fingerprint"></i> '+(f.icao24||'N/A')+'</div><div class="popup-detail"><i class="fas fa-globe"></i> '+(f.origin_country||'N/A')+'</div></div><div class="popup-route"><div><strong>📍 Região:</strong> '+(f.region||'N/A')+' ('+(f.distance_from_center?f.distance_from_center.toFixed(1):'?')+' km)</div><div><strong>⏱️ Último contacto:</strong> '+(f.last_contact?new Date(f.last_contact*1000).toLocaleTimeString('pt-PT'):'N/A')+'</div><div><strong>📡 Transponder:</strong> '+(f.squawk||'N/A')+'</div><div><strong>🏢 Companhia:</strong> '+airline.name+' ('+airline.country+')</div></div></div>';marker.bindPopup(popupContent);markers[f.icao24]=marker}});renderFlightList()}
+function updateFlights(newFlights){flights=newFlights;document.getElementById('flight-count').textContent=flights.length+' voos';document.getElementById('flights-loading').style.display='none';const currentIds=new Set(flights.map(f=>f.icao24));Object.keys(markers).forEach(id=>{if(!currentIds.has(id)){map.removeLayer(markers[id]);delete markers[id]}});flights.forEach(f=>{const airline=getAirlineInfo(f.callsign);const region=regions.find(r=>r.name===f.region)||{color:'#38bdf8'};if(markers[f.icao24]){markers[f.icao24].setLatLng([f.latitude,f.longitude]);markers[f.icao24].setIcon(createAircraftIcon(f.heading,region.color,f.callsign))}else{const marker=L.marker([f.latitude,f.longitude],{icon:createAircraftIcon(f.heading,region.color,f.callsign)}).addTo(map);const flightTime=f.last_contact?Math.round((Date.now()/1000-f.last_contact)/60):'?';const popupContent='<div class="popup-content"><div class="popup-header"><span class="popup-flag">'+airline.flag+'</span><div><div class="popup-callsign">'+(f.callsign||'N/A')+'</div><div class="popup-airline">'+airline.name+'</div></div></div><div class="popup-details"><div class="popup-detail"><i class="fas fa-arrows-alt-v"></i> '+Math.round(f.altitude||0).toLocaleString()+' ft</div><div class="popup-detail"><i class="fas fa-tachometer-alt"></i> '+Math.round((f.velocity||0)*3.6)+' km/h</div><div class="popup-detail"><i class="fas fa-compass"></i> '+Math.round(f.heading||0)+'°</div><div class="popup-detail"><i class="fas fa-clock"></i> '+flightTime+' min</div><div class="popup-detail"><i class="fas fa-fingerprint"></i> '+(f.icao24||'N/A')+'</div><div class="popup-detail"><i class="fas fa-globe"></i> '+(f.origin_country||'N/A')+'</div></div><div class="popup-route"><div><strong>📍 Regiao:</strong> '+(f.region||'N/A')+' ('+(f.distance_from_center?f.distance_from_center.toFixed(1):'?')+' km)</div><div><strong>⏱️ Ultimo contacto:</strong> '+(f.last_contact?new Date(f.last_contact*1000).toLocaleTimeString('pt-PT'):'N/A')+'</div><div><strong>📡 Transponder:</strong> '+(f.squawk||'N/A')+'</div><div><strong>🏢 Companhia:</strong> '+airline.name+' ('+airline.country+')</div></div></div>';marker.bindPopup(popupContent);markers[f.icao24]=marker}});renderFlightList()}
 function renderFlightList(){const container=document.getElementById('flights-list');if(!flights.length){container.innerHTML='<p style="color:#94a3b8;text-align:center;padding:20px">Nenhum voo ativo</p>';return}container.innerHTML=flights.map(f=>{const airline=getAirlineInfo(f.callsign);const region=regions.find(r=>r.name===f.region)||{color:'#38bdf8'};const flightTime=f.last_contact?Math.round((Date.now()/1000-f.last_contact)/60):'?';return'<div class="flight-card" onclick="focusFlight(\''+f.icao24+'\')"><div class="airline"><span class="airline-flag">'+airline.flag+'</span><div><div class="callsign">'+(f.callsign||'N/A')+'</div><div class="airline-name">'+airline.name+'</div></div></div><div class="details"><div class="detail-item"><i class="fas fa-arrows-alt-v"></i> '+Math.round(f.altitude||0).toLocaleString()+' ft</div><div class="detail-item"><i class="fas fa-tachometer-alt"></i> '+Math.round((f.velocity||0)*3.6)+' km/h</div><div class="detail-item"><i class="fas fa-compass"></i> '+Math.round(f.heading||0)+'°</div><div class="detail-item"><i class="fas fa-clock"></i> '+flightTime+' min</div></div><span class="region-tag" style="background:'+region.color+'22;color:'+region.color+';border:1px solid '+region.color+'44">📍 '+(f.region||'N/A')+' ('+(f.distance_from_center?f.distance_from_center.toFixed(1):'?')+' km)</span></div>'}).join('')}
 function focusFlight(icao24){const f=flights.find(x=>x.icao24===icao24);if(f){map.setView([f.latitude,f.longitude],13);if(markers[icao24])markers[icao24].openPopup()}}
 async function loadStats(){try{const res=await fetch('/api/stats?hours=24');const data=await res.json();const s=data.stats||{};document.getElementById('stat-total').textContent=s.total_flights||0;document.getElementById('stat-active').textContent=s.active_flights||0;document.getElementById('stat-countries').textContent=s.unique_countries||0;document.getElementById('stat-max-alt').textContent=s.max_altitude?Math.round(s.max_altitude).toLocaleString():0;renderCharts(s)}catch(e){console.error('Erro stats:',e)}}
-function renderCharts(s){if(charts.hourly)charts.hourly.destroy();if(charts.countries)charts.countries.destroy();if(charts.altitude)charts.altitude.destroy();const hourly=s.hourly||[];charts.hourly=new Chart(document.getElementById('hourlyChart'),{type:'line',data:{labels:hourly.map(h=>h.hour+':00'),datasets:[{label:'Voos',data:hourly.map(h=>h.count),borderColor:'#38bdf8',backgroundColor:'rgba(56,189,248,0.1)',fill:true,tension:.4}]},options:{responsive:true,plugins:{legend:{display:false}},scales:{x:{ticks:{color:'#94a3b8'}},y:{ticks:{color:'#94a3b8'}}}}});const countries=s.countries||[];charts.countries=new Chart(document.getElementById('countriesChart'),{type:'doughnut',data:{labels:countries.map(c=>c.country),datasets:[{data:countries.map(c=>c.count),backgroundColor:['#38bdf8','#22c55e','#f59e0b','#ef4444','#a855f7','#ec4899']}]},options:{responsive:true,plugins:{legend:{position:'right',labels:{color:'#e2e8f0'}}}}});const altRanges=s.altitude_distribution||[];charts.altitude=new Chart(document.getElementById('altitudeChart'),{type:'bar',data:{labels:altRanges.map(a=>a.range),datasets:[{label:'Aviões',data:altRanges.map(a=>a.count),backgroundColor:'#38bdf8'}]},options:{responsive:true,plugins:{legend:{display:false}},scales:{x:{ticks:{color:'#94a3b8'}},y:{ticks:{color:'#94a3b8'}}}}})}
-async function loadAlerts(){try{const res=await fetch('/api/alerts');const data=await res.json();const alerts=data.alerts||[];document.getElementById('alert-count').textContent=alerts.length;document.getElementById('alert-badge').classList.toggle('show',alerts.length>0);const container=document.getElementById('alerts-list');if(!alerts.length){container.innerHTML='<p style="color:#94a3b8;text-align:center;padding:20px">Nenhum alerta</p>';return}container.innerHTML=alerts.map(a=>'<div class="alert-item"><div class="time">'+new Date(a.timestamp).toLocaleString('pt-PT')+'</div><div class="message">🔔 <strong>'+a.callsign+'</strong> detetado em '+a.region+' — '+(a.distance_km?a.distance_km.toFixed(1):'?')+' km de distância</div></div>').join('')}catch(e){console.error('Erro alerts:',e)}}
+function renderCharts(s){if(charts.hourly)charts.hourly.destroy();if(charts.countries)charts.countries.destroy();if(charts.altitude)charts.altitude.destroy();const hourly=s.hourly||[];charts.hourly=new Chart(document.getElementById('hourlyChart'),{type:'line',data:{labels:hourly.map(h=>h.hour+':00'),datasets:[{label:'Voos',data:hourly.map(h=>h.count),borderColor:'#38bdf8',backgroundColor:'rgba(56,189,248,0.1)',fill:true,tension:.4}]},options:{responsive:true,plugins:{legend:{display:false}},scales:{x:{ticks:{color:'#94a3b8'}},y:{ticks:{color:'#94a3b8'}}}}});const countries=s.countries||[];charts.countries=new Chart(document.getElementById('countriesChart'),{type:'doughnut',data:{labels:countries.map(c=>c.country),datasets:[{data:countries.map(c=>c.count),backgroundColor:['#38bdf8','#22c55e','#f59e0b','#ef4444','#a855f7','#ec4899']}]},options:{responsive:true,plugins:{legend:{position:'right',labels:{color:'#e2e8f0'}}}}});const altRanges=s.altitude_distribution||[];charts.altitude=new Chart(document.getElementById('altitudeChart'),{type:'bar',data:{labels:altRanges.map(a=>a.range),datasets:[{label:'Avioes',data:altRanges.map(a=>a.count),backgroundColor:'#38bdf8'}]},options:{responsive:true,plugins:{legend:{display:false}},scales:{x:{ticks:{color:'#94a3b8'}},y:{ticks:{color:'#94a3b8'}}}}})}
+async function loadAlerts(){try{const res=await fetch('/api/alerts');const data=await res.json();const alerts=data.alerts||[];document.getElementById('alert-count').textContent=alerts.length;document.getElementById('alert-badge').classList.toggle('show',alerts.length>0);const container=document.getElementById('alerts-list');if(!alerts.length){container.innerHTML='<p style="color:#94a3b8;text-align:center;padding:20px">Nenhum alerta</p>';return}container.innerHTML=alerts.map(a=>'<div class="alert-item"><div class="time">'+new Date(a.timestamp).toLocaleString('pt-PT')+'</div><div class="message">🔔 <strong>'+a.callsign+'</strong> detetado em '+a.region+' — '+(a.distance_km?a.distance_km.toFixed(1):'?')+' km de distancia</div></div>').join('')}catch(e){console.error('Erro alerts:',e)}}
 function showAlerts(){switchTab('alerts')}
 function switchTab(name){document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));document.querySelectorAll('.tab-content').forEach(t=>t.classList.remove('active'));event.target.closest('.tab').classList.add('active');document.getElementById('tab-'+name).classList.add('active');if(name==='stats')loadStats();if(name==='alerts')loadAlerts()}
 function connectWS(){const protocol=window.location.protocol==='https:'?'wss:':'ws:';ws=new WebSocket(protocol+'//'+window.location.host+'/ws');ws.onopen=()=>{document.getElementById('conn-status').textContent='Online';document.querySelector('.status-dot').style.background='#22c55e'};ws.onmessage=(e)=>{try{const data=JSON.parse(e.data);if(data.type==='init'||data.type==='update'){updateFlights(data.flights||[])}}catch(err){console.error('WS parse error:',err)}};ws.onclose=()=>{document.getElementById('conn-status').textContent='Offline';document.querySelector('.status-dot').style.background='#ef4444';setTimeout(connectWS,5000)};ws.onerror=(e)=>{console.error('WS error:',e);ws.close()}}
@@ -206,6 +206,16 @@ class WSManager:
 
 manager = WSManager()
 
+def serialize_for_json(obj):
+    """Converte objetos nao serializaveis para JSON"""
+    if isinstance(obj, datetime):
+        return obj.isoformat()
+    if isinstance(obj, list):
+        return [serialize_for_json(item) for item in obj]
+    if isinstance(obj, dict):
+        return {k: serialize_for_json(v) for k, v in obj.items()}
+    return obj
+
 async def broadcast_updates():
     try:
         db = await get_db()
@@ -214,6 +224,10 @@ async def broadcast_updates():
         flights = []
         async for doc in cursor:
             doc.pop("_id", None)
+            # Converter todos os datetimes para strings
+            for key, value in list(doc.items()):
+                if isinstance(value, datetime):
+                    doc[key] = value.isoformat()
             flights.append(doc)
 
         message = json.dumps({"type": "update", "flights": flights, "timestamp": datetime.utcnow().isoformat()})
@@ -291,8 +305,9 @@ async def get_alerts_api():
         alerts = []
         async for doc in cursor:
             doc.pop("_id", None)
-            if "timestamp" in doc and hasattr(doc["timestamp"], "isoformat"):
-                doc["timestamp"] = doc["timestamp"].isoformat()
+            for key, value in list(doc.items()):
+                if isinstance(value, datetime):
+                    doc[key] = value.isoformat()
             alerts.append(doc)
         return {"alerts": alerts}
     except Exception as e:
