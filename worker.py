@@ -6,7 +6,7 @@ from datetime import datetime, timedelta
 from database import save_flight, cleanup_old, get_db
 from opensky_client import fetch_all_regions
 
-POLL_INTERVAL = int(os.getenv("POLL_INTERVAL", "30"))
+POLL_INTERVAL = int(os.getenv("POLL_INTERVAL", "60"))
 CLEANUP_DAYS = int(os.getenv("CLEANUP_DAYS", "7"))
 ALERT_AIRCRAFT = [a.strip().upper() for a in os.getenv("ALERT_AIRCRAFT", "").split(",") if a.strip()]
 ALERT_COOLDOWN = {}
@@ -69,18 +69,15 @@ async def worker_loop():
                         saved += 1
                 print(f"✅ {saved}/{len(flights)} voos guardados com sucesso")
 
-                # Verificar alertas
                 await check_alerts(flights)
             else:
                 print("⚠️ Nenhum voo detetado neste poll")
 
-            # Cleanup a cada 10 polls (~5 min)
             cleanup_counter += 1
             if cleanup_counter >= 10:
                 await cleanup_old(CLEANUP_DAYS)
                 cleanup_counter = 0
 
-            # Broadcast via WebSocket
             if _broadcast_callback:
                 try:
                     await _broadcast_callback()
