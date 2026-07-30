@@ -9,12 +9,12 @@ import httpx
 
 REGIONS = json.loads(os.getenv("REGIONS", '[{"name":"Sesimbra","lat":38.4435,"lon":-9.1015,"radius_km":80,"color":"#ef4444"},{"name":"Setubal","lat":38.5244,"lon":-8.8882,"radius_km":60,"color":"#3b82f6"},{"name":"Lisboa","lat":38.7223,"lon":-9.1393,"radius_km":70,"color":"#22c55e"}]'))
 
-# Cache para dados de aeronaves e aeroportos
+# Cache
 _aircraft_cache = {}
 _airport_cache = {}
 _weather_cache = {}
 
-# Dados de aeronaves comuns (fallback)
+# Dados de aeronaves
 AIRCRAFT_DB = {
     "A320": {"type": "Airbus A320", "manufacturer": "Airbus", "engine": "CFM56/IAE V2500", "wingspan": 35.8, "length": 37.6, "max_speed": 871, "ceiling": 39000, "passengers": 180},
     "A321": {"type": "Airbus A321", "manufacturer": "Airbus", "engine": "CFM56/IAE V2500", "wingspan": 35.8, "length": 44.5, "max_speed": 871, "ceiling": 39000, "passengers": 220},
@@ -34,7 +34,7 @@ AIRCRAFT_DB = {
     "AT76": {"type": "ATR 72-600", "manufacturer": "ATR", "engine": "PW127", "wingspan": 27.1, "length": 27.2, "max_speed": 509, "ceiling": 25000, "passengers": 78},
 }
 
-# Aeroportos da região (fallback)
+# Aeroportos
 AIRPORTS = {
     "LPPT": {"icao": "LPPT", "iata": "LIS", "name": "Aeroporto Humberto Delgado", "city": "Lisboa", "country": "Portugal", "lat": 38.7813, "lon": -9.1359, "elevation": 374},
     "LPFR": {"icao": "LPFR", "iata": "FAO", "name": "Aeroporto de Faro", "city": "Faro", "country": "Portugal", "lat": 37.0144, "lon": -7.9659, "elevation": 24},
@@ -52,6 +52,45 @@ AIRPORTS = {
     "LPBJ": {"icao": "LPBJ", "iata": "BYJ", "name": "Aeroporto de Beja", "city": "Beja", "country": "Portugal", "lat": 38.0789, "lon": -7.9322, "elevation": 630},
     "LPLA": {"icao": "LPLA", "iata": "TER", "name": "Aeroporto das Lajes", "city": "Angra do Heroísmo", "country": "Portugal", "lat": 38.7618, "lon": -27.0908, "elevation": 180},
 }
+
+# Demo flights com trajetos realistas (aviões a voar, não parados)
+# Cada voo tem: posição inicial, velocidade, rumo, altitude
+_DEMO_FLIGHTS_BASE = [
+    {"icao24": "495299", "callsign": "TAP1923", "origin_country": "Portugal", "typecode": "A320", "registration": "CS-TNV",
+     "lat": 38.72, "lon": -9.14, "alt": 15000, "vel": 220, "hdg": 45, "vsi": 1500,
+     "region": "Lisboa", "dist": 0.3, "squawk": "1234", "origin": "LPPT", "dest": "LEMD"},
+
+    {"icao24": "4CA9C1", "callsign": "RYR5678", "origin_country": "Ireland", "typecode": "B738", "registration": "EI-DWJ",
+     "lat": 38.52, "lon": -8.89, "alt": 28000, "vel": 230, "hdg": 120, "vsi": 0,
+     "region": "Setubal", "dist": 0.5, "squawk": "5678", "origin": "EGLL", "dest": "LPFR"},
+
+    {"icao24": "40643A", "callsign": "EZY9012", "origin_country": "United Kingdom", "typecode": "A319", "registration": "G-EZDA",
+     "lat": 38.44, "lon": -9.10, "alt": 32000, "vel": 210, "hdg": 200, "vsi": -500,
+     "region": "Sesimbra", "dist": 0.4, "squawk": "9012", "origin": "EHAM", "dest": "LPPT"},
+
+    {"icao24": "4008B4", "callsign": "BAW3456", "origin_country": "United Kingdom", "typecode": "A320", "registration": "G-EUUY",
+     "lat": 38.65, "lon": -9.25, "alt": 12000, "vel": 180, "hdg": 315, "vsi": -2000,
+     "region": "Lisboa", "dist": 14.5, "squawk": "3456", "origin": "LEBL", "dest": "LPPT"},
+
+    {"icao24": "39E68B", "callsign": "AFR7890", "origin_country": "France", "typecode": "A321", "registration": "F-GTAZ",
+     "lat": 38.40, "lon": -8.95, "alt": 35000, "vel": 240, "hdg": 90, "vsi": 0,
+     "region": "Setubal", "dist": 16.6, "squawk": "7890", "origin": "LFPG", "dest": "LPFR"},
+
+    {"icao24": "3C66AC", "callsign": "DLH1234", "origin_country": "Germany", "typecode": "A320", "registration": "D-AIZW",
+     "lat": 38.60, "lon": -9.00, "alt": 30000, "vel": 225, "hdg": 270, "vsi": 0,
+     "region": "Setubal", "dist": 8.2, "squawk": "2345", "origin": "EDDF", "dest": "LPPT"},
+
+    {"icao24": "3453D1", "callsign": "IBE4567", "origin_country": "Spain", "typecode": "A320", "registration": "EC-ILR",
+     "lat": 38.35, "lon": -8.80, "alt": 25000, "vel": 200, "hdg": 340, "vsi": -1000,
+     "region": "Sesimbra", "dist": 22.1, "squawk": "4567", "origin": "LEMD", "dest": "LPPT"},
+
+    {"icao24": "484F6D", "callsign": "KLM8910", "origin_country": "Netherlands", "typecode": "B738", "registration": "PH-BXZ",
+     "lat": 38.80, "lon": -9.30, "alt": 18000, "vel": 210, "hdg": 180, "vsi": -1500,
+     "region": "Lisboa", "dist": 35.4, "squawk": "8910", "origin": "EHAM", "dest": "LPPT"},
+]
+
+# Estado atual dos voos demo (para movimento contínuo)
+_demo_flight_state = {}
 
 def haversine(lat1, lon1, lat2, lon2):
     R = 6371
@@ -154,12 +193,50 @@ async def fetch_adsbexchange():
         print(f"⚠️ ADS-B Exchange erro: {e}")
     return []
 
+async def fetch_flightradar24():
+    """Tentar FlightRadar24 via proxy CORS (funciona no Render)"""
+    try:
+        # Usar um proxy CORS público para aceder ao FlightRadar24
+        proxies = [
+            "https://api.allorigins.win/raw?url=https://data-live.flightradar24.com/zones/fcgi/feed.js?bounds=38.3,38.9,-9.5,-8.5",
+            "https://corsproxy.io/?https://data-live.flightradar24.com/zones/fcgi/feed.js?bounds=38.3,38.9,-9.5,-8.5",
+        ]
+        for proxy_url in proxies:
+            response = await fetch_with_retry(proxy_url, timeout=15.0, max_retries=1)
+            if response and response.status_code == 200:
+                data = response.json()
+                # FlightRadar24 retorna um dict com icao24 como keys
+                states = []
+                for icao, info in data.items():
+                    if not isinstance(info, list) or len(info) < 16:
+                        continue
+                    states.append([
+                        icao,                    # icao24
+                        info[16] if len(info) > 16 else "",  # callsign
+                        info[12] if len(info) > 12 else "",  # origin_country
+                        None, None,
+                        info[1] if len(info) > 1 else None,  # longitude
+                        info[2] if len(info) > 2 else None,  # latitude
+                        info[14] if len(info) > 14 else False,  # on_ground
+                        info[5] if len(info) > 5 else 0,     # velocity
+                        info[3] if len(info) > 3 else 0,     # heading
+                        info[15] if len(info) > 15 else 0,   # vertical_rate
+                        None, None,
+                        info[4] if len(info) > 4 else 0,     # altitude
+                        info[6] if len(info) > 6 else "",    # squawk
+                        None, None
+                    ])
+                print(f"📡 FlightRadar24: {len(states)} aeronaves")
+                return states
+    except Exception as e:
+        print(f"⚠️ FlightRadar24 erro: {e}")
+    return []
+
 async def fetch_weather(lat, lon):
-    """Buscar dados meteorológicos do Open-Meteo (gratuito)"""
     cache_key = f"{lat:.1f},{lon:.1f}"
     if cache_key in _weather_cache:
         age = (datetime.utcnow() - _weather_cache[cache_key]["timestamp"]).total_seconds()
-        if age < 600:  # Cache 10 minutos
+        if age < 600:
             return _weather_cache[cache_key]["data"]
 
     try:
@@ -186,10 +263,9 @@ async def fetch_weather(lat, lon):
     return None
 
 async def fetch_aircraft_info(icao24):
-    """Buscar informações da aeronave (gratuito via OpenSky)"""
     if icao24 in _aircraft_cache:
         age = (datetime.utcnow() - _aircraft_cache[icao24]["timestamp"]).total_seconds()
-        if age < 86400:  # Cache 24h
+        if age < 86400:
             return _aircraft_cache[icao24]["data"]
 
     try:
@@ -217,18 +293,15 @@ async def fetch_aircraft_info(icao24):
     return None
 
 def get_aircraft_specs(typecode):
-    """Obter especificações da aeronave da base de dados local"""
     if not typecode:
         return None
     typecode_upper = typecode.upper()
-    # Procurar match parcial
     for key, specs in AIRCRAFT_DB.items():
         if key in typecode_upper or typecode_upper in key:
             return specs
     return None
 
 def get_nearest_airport(lat, lon):
-    """Encontrar o aeroporto mais próximo"""
     nearest = None
     min_dist = float('inf')
     for code, airport in AIRPORTS.items():
@@ -239,13 +312,10 @@ def get_nearest_airport(lat, lon):
     return nearest
 
 def estimate_route(flight, nearest_airport):
-    """Estimar origem/destino com base na posição e rumo"""
     if not flight or not nearest_airport:
         return {"origin": "Desconhecido", "destination": "Desconhecido", "progress": 0}
 
     heading = flight.get("heading", 0) or 0
-
-    # Aeroportos prováveis de origem/destino na região
     candidates = []
     for code, airport in AIRPORTS.items():
         if code == nearest_airport["icao"]:
@@ -255,17 +325,16 @@ def estimate_route(flight, nearest_airport):
 
     candidates.sort(key=lambda x: x["distance_km"])
 
-    # Estimar origem (aeroporto atrás) e destino (aeroporto à frente)
     origin = nearest_airport if nearest_airport["distance_km"] < 50 else (candidates[0] if candidates else None)
     destination = candidates[0] if candidates else origin
 
-    # Calcular progresso aproximado
     if origin and destination:
         total_dist = haversine(origin["lat"], origin["lon"], destination["lat"], destination["lon"])
         current_dist_from_origin = haversine(flight["latitude"], flight["longitude"], origin["lat"], origin["lon"])
         progress = min(95, max(5, round((current_dist_from_origin / total_dist) * 100))) if total_dist > 0 else 50
     else:
         progress = 50
+        total_dist = 0
 
     return {
         "origin": origin["name"] if origin else "Desconhecido",
@@ -280,16 +349,127 @@ def estimate_route(flight, nearest_airport):
     }
 
 def calculate_mach(velocity_ms, altitude_m):
-    """Estimar número Mach (simplificado)"""
     if not velocity_ms:
         return None
-    # Velocidade do som aproximada em m/s a diferentes altitudes
-    # A 30000ft (~9144m): ~295 m/s
-    # A 35000ft (~10668m): ~295 m/s
-    # A 40000ft (~12192m): ~295 m/s
-    speed_of_sound = 295  # m/s a altitude de cruzeiro
+    speed_of_sound = 295
     mach = velocity_ms / speed_of_sound
     return round(mach, 2)
+
+def move_aircraft(lat, lon, hdg, vel_ms, seconds=30):
+    """Mover aeronave com base no rumo e velocidade"""
+    # vel_ms = m/s, seconds = tempo desde último update
+    # Distância percorrida em km
+    distance_km = (vel_ms * seconds) / 1000
+
+    # Converter rumo para radianos (0° = Norte, 90° = Este)
+    hdg_rad = math.radians(hdg)
+
+    # 1 grau de latitude ≈ 111 km
+    # 1 grau de longitude ≈ 111 km * cos(latitude)
+    lat_change = distance_km * math.cos(hdg_rad) / 111.0
+    lon_change = distance_km * math.sin(hdg_rad) / (111.0 * math.cos(math.radians(lat)))
+
+    return lat + lat_change, lon + lon_change
+
+def generate_demo_flights():
+    """Gerar voos demo em movimento contínuo"""
+    global _demo_flight_state
+
+    now = datetime.utcnow()
+    flights = []
+
+    for base in _DEMO_FLIGHTS_BASE:
+        icao = base["icao24"]
+
+        # Inicializar estado se não existir
+        if icao not in _demo_flight_state:
+            _demo_flight_state[icao] = {
+                "lat": base["lat"],
+                "lon": base["lon"],
+                "alt": base["alt"],
+                "hdg": base["hdg"],
+                "vel": base["vel"],
+                "vsi": base["vsi"],
+                "last_update": now,
+            }
+
+        state = _demo_flight_state[icao]
+
+        # Calcular tempo desde último update
+        elapsed = (now - state["last_update"]).total_seconds()
+        state["last_update"] = now
+
+        # Mover a aeronave
+        new_lat, new_lon = move_aircraft(state["lat"], state["lon"], state["hdg"], state["vel"], elapsed)
+        state["lat"] = new_lat
+        state["lon"] = new_lon
+
+        # Atualizar altitude
+        state["alt"] += (state["vsi"] / 60) * elapsed  # ft/min -> ft/s
+        state["alt"] = max(0, min(45000, state["alt"]))  # Limitar
+
+        # Pequenas variações aleatórias no rumo (±2°) para parecer real
+        import random
+        state["hdg"] = (state["hdg"] + random.uniform(-2, 2)) % 360
+
+        # Se sair muito longe da região, inverter rumo (voltar)
+        center_lat, center_lon = 38.52, -8.89
+        dist_from_center = haversine(new_lat, new_lon, center_lat, center_lon)
+        if dist_from_center > 120:
+            # Virar para o centro
+            dx = center_lon - new_lon
+            dy = center_lat - new_lat
+            state["hdg"] = (math.degrees(math.atan2(dx, dy)) + 360) % 360
+
+        # Criar o objeto flight
+        flight = {
+            "icao24": icao,
+            "callsign": base["callsign"],
+            "origin_country": base["origin_country"],
+            "latitude": round(new_lat, 6),
+            "longitude": round(new_lon, 6),
+            "altitude": round(state["alt"]),
+            "altitude_gps": round(state["alt"] + 50),
+            "velocity": round(state["vel"]),
+            "heading": round(state["hdg"]),
+            "vertical_rate": round(state["vsi"]),
+            "squawk": base["squawk"],
+            "on_ground": False,
+            "position_source": 0,
+            "region": base["region"],
+            "distance_from_center": round(dist_from_center, 1),
+            "last_contact": int(now.timestamp()),
+            "last_seen": now,
+        }
+
+        # Enriquecer
+        flight["nearest_airport"] = get_nearest_airport(new_lat, new_lon)
+        flight["route"] = estimate_route(flight, flight["nearest_airport"])
+        flight["mach"] = calculate_mach(flight["velocity"], flight["altitude"])
+
+        # Aircraft info
+        ac_specs = get_aircraft_specs(base["typecode"])
+        flight["aircraft_info"] = {
+            "typecode": base["typecode"],
+            "registration": base["registration"],
+            "manufacturer_icao": ac_specs["manufacturer"].upper() if ac_specs else "N/A",
+            "model": ac_specs["type"] if ac_specs else "N/A",
+        }
+        flight["aircraft_specs"] = ac_specs
+
+        # Weather (estático para demo)
+        flight["weather"] = {
+            "temperature": 22,
+            "humidity": 65,
+            "pressure": 1013,
+            "wind_speed": 15,
+            "wind_direction": 270,
+            "wind_gusts": 25,
+        }
+
+        flights.append(flight)
+
+    return flights
 
 def parse_state(state):
     if not state or len(state) < 17:
@@ -330,24 +510,13 @@ async def fetch_all_regions():
         source = "adsbexchange"
 
     if not states:
-        print("📊 Usando dados de demonstração...")
-        demo_flights = [
-            {"icao24": "ABC123", "callsign": "TAP1923", "origin_country": "Portugal", "latitude": 38.72, "longitude": -9.14, "altitude": 15000, "altitude_gps": 15100, "velocity": 220, "heading": 45, "vertical_rate": 1500, "region": "Lisboa", "distance_from_center": 0.3, "last_contact": int(datetime.utcnow().timestamp()), "squawk": "1234", "on_ground": False, "position_source": 0},
-            {"icao24": "DEF456", "callsign": "RYR5678", "origin_country": "Ireland", "latitude": 38.52, "longitude": -8.89, "altitude": 28000, "altitude_gps": 28100, "velocity": 230, "heading": 120, "vertical_rate": 0, "region": "Setubal", "distance_from_center": 0.5, "last_contact": int(datetime.utcnow().timestamp()), "squawk": "5678", "on_ground": False, "position_source": 0},
-            {"icao24": "GHI789", "callsign": "EZY9012", "origin_country": "United Kingdom", "latitude": 38.44, "longitude": -9.10, "altitude": 32000, "altitude_gps": 32100, "velocity": 210, "heading": 200, "vertical_rate": -500, "region": "Sesimbra", "distance_from_center": 0.4, "last_contact": int(datetime.utcnow().timestamp()), "squawk": "9012", "on_ground": False, "position_source": 0},
-            {"icao24": "JKL012", "callsign": "BAW3456", "origin_country": "United Kingdom", "latitude": 38.65, "longitude": -9.25, "altitude": 12000, "altitude_gps": 12100, "velocity": 180, "heading": 315, "vertical_rate": -2000, "region": "Lisboa", "distance_from_center": 14.5, "last_contact": int(datetime.utcnow().timestamp()), "squawk": "3456", "on_ground": False, "position_source": 0},
-            {"icao24": "MNO345", "callsign": "AFR7890", "origin_country": "France", "latitude": 38.40, "longitude": -8.95, "altitude": 35000, "altitude_gps": 35100, "velocity": 240, "heading": 90, "vertical_rate": 0, "region": "Setubal", "distance_from_center": 16.6, "last_contact": int(datetime.utcnow().timestamp()), "squawk": "7890", "on_ground": False, "position_source": 0},
-        ]
-        for f in demo_flights:
-            f["last_seen"] = datetime.utcnow()
-            # Adicionar dados enriquecidos
-            f["weather"] = {"temperature": 22, "wind_speed": 15, "wind_direction": 270, "pressure": 1013}
-            f["aircraft_info"] = {"typecode": "A320", "registration": "CS-T" + f["icao24"][-2:], "manufacturer_icao": "AIRBUS", "model": "A320-214"}
-            f["aircraft_specs"] = AIRCRAFT_DB.get("A320")
-            f["nearest_airport"] = get_nearest_airport(f["latitude"], f["longitude"])
-            f["route"] = estimate_route(f, f["nearest_airport"])
-            f["mach"] = calculate_mach(f["velocity"], f["altitude"])
-        return demo_flights
+        print("🔄 Tentando FlightRadar24...")
+        states = await fetch_flightradar24()
+        source = "flightradar24"
+
+    if not states:
+        print("📊 Usando dados de demonstração com movimento realista...")
+        return generate_demo_flights()
 
     flights = []
     valid_count = 0
@@ -362,12 +531,10 @@ async def fetch_all_regions():
             parsed["distance_from_center"] = round(dist, 1)
             parsed["last_seen"] = datetime.utcnow()
 
-            # Enriquecer com dados adicionais
             parsed["nearest_airport"] = get_nearest_airport(parsed["latitude"], parsed["longitude"])
             parsed["route"] = estimate_route(parsed, parsed["nearest_airport"])
             parsed["mach"] = calculate_mach(parsed.get("velocity"), parsed.get("altitude"))
 
-            # Tentar buscar info da aeronave (não bloqueante)
             try:
                 aircraft_info = await fetch_aircraft_info(parsed["icao24"])
                 if aircraft_info:
@@ -376,7 +543,6 @@ async def fetch_all_regions():
             except:
                 pass
 
-            # Tentar buscar weather (não bloqueante)
             try:
                 weather = await fetch_weather(parsed["latitude"], parsed["longitude"])
                 if weather:
