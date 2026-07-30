@@ -21,6 +21,7 @@ DASHBOARD_HTML = r"""<!DOCTYPE html>
 <title>SkyTracker - Sesimbra</title>
 <link rel="manifest" href="/manifest.json">
 <meta name="theme-color" content="#0f172a">
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E✈️%3C/text%3E%3C/svg%3E">
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
@@ -144,7 +145,7 @@ function updateFlights(newFlights){flights=newFlights;document.getElementById('f
 function renderFlightList(){const container=document.getElementById('flights-list');if(!flights.length){container.innerHTML='<p style="color:#94a3b8;text-align:center;padding:20px">Nenhum voo ativo</p>';return}container.innerHTML=flights.map(f=>{const airline=getAirlineInfo(f.callsign);const region=regions.find(r=>r.name===f.region)||{color:'#38bdf8'};const flightTime=f.last_contact?Math.round((Date.now()/1000-f.last_contact)/60):'?';return'<div class="flight-card" onclick="focusFlight(\''+f.icao24+'\')"><div class="airline"><span class="airline-flag">'+airline.flag+'</span><div><div class="callsign">'+(f.callsign||'N/A')+'</div><div class="airline-name">'+airline.name+'</div></div></div><div class="details"><div class="detail-item"><i class="fas fa-arrows-alt-v"></i> '+Math.round(f.altitude||0).toLocaleString()+' ft</div><div class="detail-item"><i class="fas fa-tachometer-alt"></i> '+Math.round((f.velocity||0)*3.6)+' km/h</div><div class="detail-item"><i class="fas fa-compass"></i> '+Math.round(f.heading||0)+'°</div><div class="detail-item"><i class="fas fa-clock"></i> '+flightTime+' min</div></div><span class="region-tag" style="background:'+region.color+'22;color:'+region.color+';border:1px solid '+region.color+'44">📍 '+(f.region||'N/A')+' ('+(f.distance_from_center?f.distance_from_center.toFixed(1):'?')+' km)</span></div>'}).join('')}
 function focusFlight(icao24){const f=flights.find(x=>x.icao24===icao24);if(f){map.setView([f.latitude,f.longitude],13);if(markers[icao24])markers[icao24].openPopup()}}
 async function loadStats(){try{const res=await fetch('/api/stats?hours=24');const data=await res.json();const s=data.stats||{};document.getElementById('stat-total').textContent=s.total_flights||0;document.getElementById('stat-active').textContent=s.active_flights||0;document.getElementById('stat-countries').textContent=s.unique_countries||0;document.getElementById('stat-max-alt').textContent=s.max_altitude?Math.round(s.max_altitude).toLocaleString():0;renderCharts(s)}catch(e){console.error('Erro stats:',e)}}
-function renderCharts(s){if(charts.hourly)charts.hourly.destroy();if(charts.countries)charts.countries.destroy();if(charts.altitude)charts.altitude.destroy();const hourly=s.hourly||[];charts.hourly=new Chart(document.getElementById('hourlyChart'),{type:'line',data:{labels:hourly.map(h=>h.hour+':00'),datasets:[{label:'Voos',data:hourly.map(h=>h.count),borderColor:'#38bdf8',backgroundColor:'rgba(56,189,248,0.1)',fill:true,tension:.4}]},options:{responsive:true,plugins:{legend:{display:false}},scales:{x:{ticks:{color:'#94a3b8'}},y:{ticks:{color:'#94a3b8'}}}}});const countries=s.countries||[];charts.countries=new Chart(document.getElementById('countriesChart'),{type:'doughnut',data:{labels:countries.map(c=>c.country),datasets:[{data:countries.map(c=>c.count),backgroundColor:['#38bdf8','#22c55e','#f59e0b','#ef4444','#a855f7','#ec4899']}]},options:{responsive:true,plugins:{legend:{position:'right',labels:{color:'#e2e8f0'}}}}});const altRanges=s.altitude_distribution||[];charts.altitude=new Chart(document.getElementById('altitudeChart'),{type:'bar',data:{labels:altRanges.map(a=>a.range),datasets:[{label:'Avioes',data:altRanges.map(a=>a.count),backgroundColor:'#38bdf8'}]},options:{responsive:true,plugins:{legend:{display:false}},scales:{x:{ticks:{color:'#94a3b8'}},y:{ticks:{color:'#94a3b8'}}}}})}
+function renderCharts(s){if(!s||typeof s!=='object'){console.log('Stats vazias, ignorando charts');return}try{if(charts.hourly)charts.hourly.destroy();if(charts.countries)charts.countries.destroy();if(charts.altitude)charts.altitude.destroy()}catch(e){console.log('Erro ao destruir charts:',e)}const hourly=s.hourly||[];if(hourly.length>0){try{charts.hourly=new Chart(document.getElementById('hourlyChart'),{type:'line',data:{labels:hourly.map(h=>h.hour+':00'),datasets:[{label:'Voos',data:hourly.map(h=>h.count),borderColor:'#38bdf8',backgroundColor:'rgba(56,189,248,0.1)',fill:true,tension:.4}]},options:{responsive:true,plugins:{legend:{display:false}},scales:{x:{ticks:{color:'#94a3b8'}},y:{ticks:{color:'#94a3b8'}}}}})}catch(e){console.log('Erro hourly chart:',e)}}const countries=s.countries||[];if(countries.length>0){try{charts.countries=new Chart(document.getElementById('countriesChart'),{type:'doughnut',data:{labels:countries.map(c=>c.country),datasets:[{data:countries.map(c=>c.count),backgroundColor:['#38bdf8','#22c55e','#f59e0b','#ef4444','#a855f7','#ec4899']}]},options:{responsive:true,plugins:{legend:{position:'right',labels:{color:'#e2e8f0'}}}}})}catch(e){console.log('Erro countries chart:',e)}}const altRanges=s.altitude_distribution||[];if(altRanges.length>0){try{charts.altitude=new Chart(document.getElementById('altitudeChart'),{type:'bar',data:{labels:altRanges.map(a=>a.range),datasets:[{label:'Avioes',data:altRanges.map(a=>a.count),backgroundColor:'#38bdf8'}]},options:{responsive:true,plugins:{legend:{display:false}},scales:{x:{ticks:{color:'#94a3b8'}},y:{ticks:{color:'#94a3b8'}}}}})}catch(e){console.log('Erro altitude chart:',e)}}}
 async function loadAlerts(){try{const res=await fetch('/api/alerts');const data=await res.json();const alerts=data.alerts||[];document.getElementById('alert-count').textContent=alerts.length;document.getElementById('alert-badge').classList.toggle('show',alerts.length>0);const container=document.getElementById('alerts-list');if(!alerts.length){container.innerHTML='<p style="color:#94a3b8;text-align:center;padding:20px">Nenhum alerta</p>';return}container.innerHTML=alerts.map(a=>'<div class="alert-item"><div class="time">'+new Date(a.timestamp).toLocaleString('pt-PT')+'</div><div class="message">🔔 <strong>'+a.callsign+'</strong> detetado em '+a.region+' — '+(a.distance_km?a.distance_km.toFixed(1):'?')+' km de distancia</div></div>').join('')}catch(e){console.error('Erro alerts:',e)}}
 function showAlerts(){switchTab('alerts')}
 function switchTab(name){document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));document.querySelectorAll('.tab-content').forEach(t=>t.classList.remove('active'));event.target.closest('.tab').classList.add('active');document.getElementById('tab-'+name).classList.add('active');if(name==='stats')loadStats();if(name==='alerts')loadAlerts()}
@@ -167,18 +168,14 @@ self.addEventListener('fetch', e => {
     e.respondWith(fetch(e.request).catch(() => new Response('Offline')));
 });"""
 
-# Manifest
+# Manifest sem icones PNG (evita erro de tamanho)
 MANIFEST_JSON = """{
     "name": "SkyTracker - Sesimbra",
     "short_name": "SkyTracker",
     "start_url": "/",
     "display": "standalone",
     "background_color": "#0f172a",
-    "theme_color": "#0f172a",
-    "icons": [
-        {"src": "/icon-192.png", "sizes": "192x192", "type": "image/png"},
-        {"src": "/icon-512.png", "sizes": "512x512", "type": "image/png"}
-    ]
+    "theme_color": "#0f172a"
 }"""
 
 # Config
@@ -206,16 +203,6 @@ class WSManager:
 
 manager = WSManager()
 
-def serialize_for_json(obj):
-    """Converte objetos nao serializaveis para JSON"""
-    if isinstance(obj, datetime):
-        return obj.isoformat()
-    if isinstance(obj, list):
-        return [serialize_for_json(item) for item in obj]
-    if isinstance(obj, dict):
-        return {k: serialize_for_json(v) for k, v in obj.items()}
-    return obj
-
 async def broadcast_updates():
     try:
         db = await get_db()
@@ -224,7 +211,6 @@ async def broadcast_updates():
         flights = []
         async for doc in cursor:
             doc.pop("_id", None)
-            # Converter todos os datetimes para strings
             for key, value in list(doc.items()):
                 if isinstance(value, datetime):
                     doc[key] = value.isoformat()
@@ -268,9 +254,9 @@ async def service_worker():
 @app.get("/icon-192.png")
 @app.get("/icon-512.png")
 async def icon():
-    import base64
-    png = base64.b64decode("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==")
-    return HTMLResponse(content=png, media_type="image/png")
+    # Retorna SVG em vez de PNG 1x1
+    svg = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 192 192"><rect fill="#0f172a" width="192" height="192"/><text x="96" y="130" font-size="120" text-anchor="middle">✈️</text></svg>'
+    return HTMLResponse(content=svg, media_type="image/svg+xml")
 
 @app.get("/api/health")
 async def health():
